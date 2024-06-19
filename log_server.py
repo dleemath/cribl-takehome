@@ -1,5 +1,7 @@
 import logging
 import re
+import time
+from uuid import uuid4
 from flask import Flask, json, request, jsonify, Response
 from flask_openapi3 import OpenAPI, Info
 import os
@@ -12,15 +14,17 @@ from typing import Optional
 
 # Log directory and default page size
 LOG_DIR = "/Users/yifangl/develop/job24/cribl-takehome/testdata/"
-DEFAULT_PAGE_SIZE = 5000
+DEFAULT_PAGE_SIZE = 1000
 DEFAULT_RESPONSE_LINES_SIZE = 1000
-
+DEFAULT_CHUNK_SIZE = 1024*1024
+MAX_LINE_SIZE = 200000
+DEFAULT_READ_TIMEOUT = 5
 
 class LogRequest(BaseModel):
     logpath: str = Field(
         description="Full path of the log file relative to the log directory.")
-    lines: Optional[int] = Field(default=DEFAULT_RESPONSE_LINES_SIZE,
-                                 description="Number of lines to return. Default is 1000.")
+    num_lines: Optional[int] = Field(default=DEFAULT_RESPONSE_LINES_SIZE,
+                                     description="Number of lines to return. Default is 1000.")
     offset: Optional[int] = Field(
         default=0, description="Offset in the log file from end. Default is 0.")
     page_size: Optional[int] = Field(
@@ -30,15 +34,20 @@ class LogRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", openapi_extra={
         "example": {
             "logpath": "install.log",
-            "lines": 50,
+            "num_lines": 50,
             "offset": 0,
             "page_size": 250
         }})
 
 
+class LogResponseMetaData(BaseModel):
+    lines_retrieved: int
+    next_request: Optional[LogRequest] = Field(default=None)
+
+
 class LogResponse(BaseModel):
-    lines: list
-    offset: int
+    data: list
+    metadata: LogResponseMetaData
 
 
 # Define OpenAPI Info
@@ -48,7 +57,7 @@ cors = CORS(app)
 
 
 def read_from_end(file_path,
-                  max_chunk_size=1024*1024,
+                  max_chunk_size=DEFAULT_CHUNK_SIZE,
                   num_lines=DEFAULT_RESPONSE_LINES_SIZE,
                   offset=0,
                   regex_pattern=None):
@@ -60,6 +69,7 @@ def read_from_end(file_path,
         chunk = f.read(size)
         # Find the last newline character in the chunk
         last_newline = chunk.decode('utf-8', errors='ignore').rfind('\n')
+        # Can't find a newline, so return the whole chunk
         if last_newline == -1:
             return chunk, position
         else:
@@ -74,7 +84,7 @@ def read_from_end(file_path,
 
         lines = []
         buffer = b''
-
+        start_time = time.time()
         while position >= 0:
             chunk, next_position = read_chunk(f, position, max_chunk_size)
             buffer = chunk + buffer
@@ -87,12 +97,12 @@ def read_from_end(file_path,
             lines = buffer_lines + lines
 
             # Check if we have read enough lines
-            if len(lines) > num_lines:
+            if len(lines) > num_lines or time.time() - start_time > DEFAULT_READ_TIMEOUT:
                 resp = lines[-num_lines:][-1::-1]
                 total_size = sum(len(line) for line in lines)
                 next_offset = file_size - position + total_size
                 return resp, next_offset
-
+            
             if position == 0:
                 break
 
@@ -102,9 +112,20 @@ def read_from_end(file_path,
         return lines, file_size
 
 
-@app.post('/logs',responses={
-             200: LogResponse 
-         })
+def get_next_request(original_request: LogRequest, lines_retrieved: int, offset: int):
+    if original_request.num_lines <= lines_retrieved:
+        return None
+
+    next_request = original_request.model_copy()
+    next_request.num_lines = original_request.num_lines - lines_retrieved
+    next_request.offset = offset
+
+    return next_request
+
+
+@app.post('/logs', responses={
+    200: LogResponse
+})
 def get_log_file(body: LogRequest):
     """Get log file content
     Retrieves a specified number of lines from the end of a log file.
@@ -126,17 +147,17 @@ def get_log_file(body: LogRequest):
         - If the offset parameter is provided, the lines are retrieved from that offset.
         - If the page_size parameter is provided, the response is compressed using gzip.
     """
-    
-    filename = body.logpath
-    num_lines = body.lines
+
+    logpath = body.logpath
+    num_lines = body.num_lines
     offset = body.offset
     page_size = body.page_size
     regex = body.regex
 
-    if not filename:
+    if not logpath:
         return Response("Filename parameter is required.", status=400)
 
-    log_file_path = os.path.join(LOG_DIR, filename)
+    log_file_path = os.path.join(LOG_DIR, logpath)
     if not os.path.exists(log_file_path):
         return Response("Log file not found.", status=404)
 
@@ -147,11 +168,22 @@ def get_log_file(body: LogRequest):
 
     lines = []
     regex_pattern = re.compile(regex) if regex else None
+
+    # set the max number of lines to read based on the page size and MAX_LINE_SIZE
+    max_num_lines_read = min(num_lines, MAX_LINE_SIZE, page_size)
+
     lines, next_offset = read_from_end(
-        log_file_path, num_lines=num_lines, offset=offset, regex_pattern=regex_pattern)
+        log_file_path, num_lines=max_num_lines_read, offset=offset, regex_pattern=regex_pattern)
     response_lines = [line.decode(
         'utf-8', errors='ignore').strip() for line in lines]
-    log_response = LogResponse(lines=response_lines, offset=next_offset)
+    response_lines_size = len(response_lines)
+
+    next_request = get_next_request(
+        original_request=body, lines_retrieved=response_lines_size, offset=next_offset)
+    log_response_metadata = LogResponseMetaData(
+        lines_retrieved=len(response_lines), next_request=next_request)
+    log_response = LogResponse(
+        data=response_lines, metadata=log_response_metadata)
     response = log_response.model_dump_json()
     if 'gzip' in request.headers.get('Accept-Encoding', ''):
         response = compress_response(response.encode('utf-8'))
