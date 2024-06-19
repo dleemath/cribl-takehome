@@ -121,9 +121,10 @@ def read_from_end(file_path,
 
 def get_next_request(original_request: LogRequest, lines_retrieved: int,
                      offset: int):
+    # No next request if we have read enough lines
     if original_request.num_lines <= lines_retrieved:
         return None
-
+    # Construct the next request
     next_request = original_request.model_copy()
     next_request.num_lines = original_request.num_lines - lines_retrieved
     next_request.offset = offset
@@ -135,27 +136,6 @@ def get_next_request(original_request: LogRequest, lines_retrieved: int,
     200: LogResponse
 })
 def get_log_file(body: LogRequest):
-    """Get log file content
-    Retrieves a specified number of lines from the end of a log file.
-
-    Parameters:
-        body (LogRequest): The request body containing the log file path, number of lines to retrieve,
-                           offset, page size, and regex pattern.
-
-    Returns:
-        Response: The response containing the retrieved lines and the next offset. If the filename parameter
-                  is missing or the log file is not found, a 400 or 404 response is returned respectively.
-
-    Raises:
-        ValueError: If the number of lines parameter is not an integer.
-
-    Note:
-        - The log file path is relative to the LOG_DIR directory.
-        - If the number of lines parameter is not provided, all available lines are returned.
-        - If the offset parameter is provided, the lines are retrieved from that offset.
-        - If the page_size parameter is provided, the response is compressed using gzip.
-    """
-
     logpath = body.logpath
     num_lines = body.num_lines
     offset = body.offset
