@@ -10,7 +10,7 @@ class Config(object):
 class DevelopmentConfig(Config):
     ENV = 'development'
     DEBUG = True
-    LOG_DIR = "/Users/yifangl/develop/job24/cribl-takehome/testdata/"
+    LOG_DIR = "/var/log"
 
 class TestingConfig(Config):
     ENV = 'testing'
