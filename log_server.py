@@ -67,13 +67,13 @@ def read_from_end(file_path,
         # Read a chunk of data from the file
         chunk = f.read(size)
         # Find the last newline character in the chunk
-        last_newline = chunk.decode('utf-8', errors='ignore').rfind('\n')
+        first_newline = chunk.decode('utf-8', errors='ignore').find('\n')
         # Can't find a newline, so return the whole chunk
-        if last_newline == -1:
+        if first_newline == -1:
             return chunk, position
         else:
             # Adjust the position to read the next chunk correctly
-            return chunk[:last_newline + 1], position + last_newline + 1
+            return chunk[first_newline + 1:], position + first_newline + 1
 
     with open(file_path, 'rb') as f:
         # Move to the end of the file
@@ -116,13 +116,13 @@ def read_from_end(file_path,
             position = max(next_position - max_chunk_size, 0)
 
         # If the loop ends without enough lines, return all available lines
-        return lines, file_size
+        return lines, 0
 
 
 def get_next_request(original_request: LogRequest, lines_retrieved: int,
                      offset: int):
-    # No next request if we have read enough lines
-    if original_request.num_lines <= lines_retrieved:
+    # No next request if we have read enough lines or we reached the top
+    if original_request.num_lines <= lines_retrieved or offset == 0:
         return None
     # Construct the next request
     next_request = original_request.model_copy()
