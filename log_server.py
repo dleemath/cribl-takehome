@@ -90,6 +90,12 @@ def read_from_end(file_path,
         start_time = time.time()
         while position >= 0:
             chunk, next_position = read_chunk(f, position, chunk_size)
+            # skip the whole chunk if the regex pattern doesn't match
+            if not regex_pattern.search(chunk.decode('utf-8', errors='ignore')):
+                logging.debug("Skipping chunk {}.".format(position))
+                position = max(next_position - max_chunk_size, 0)
+                # skip the whole chunk if the regex pattern doesn't match
+                continue
             buffer = chunk + buffer
 
             # Split the buffer into lines
