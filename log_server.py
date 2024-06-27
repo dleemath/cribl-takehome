@@ -91,8 +91,9 @@ def read_from_end(file_path,
         while position >= 0:
             chunk, next_position = read_chunk(f, position, chunk_size)
             # skip the whole chunk if the regex pattern doesn't match
-            if position>0 and regex_pattern.search(chunk.decode('utf-8',
+            if position>0 and not regex_pattern.search(chunk.decode('utf-8',
             errors='ignore')):
+                print("Skipping chunk {}.".format(position))
                 logging.debug("Skipping chunk {}.".format(position))
                 position = max(next_position - max_chunk_size, 0)
                 # skip the whole chunk if the regex pattern doesn't match
