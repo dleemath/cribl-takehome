@@ -79,6 +79,22 @@ def test_get_log_file_with_regex(client):
     assert response_data['metadata']['next_request'] is None
 
 
+def test_get_log_file_find_first_line(client):
+    payload = {
+        "logpath": "test.log",
+        "num_lines": 10,
+        "offset": 0,
+        "page_size": 250,
+        "regex": "Log line 1"
+    }
+    response = client.post('/logs', json=payload)
+    assert response.status_code == 200
+    response_data = json.loads(response.data)
+    assert len(response_data['data']) == 10
+    assert all("Log line 1" in line for line in response_data['data'])
+    assert response_data['metadata']['lines_retrieved'] == 10
+    assert response_data['metadata']['next_request'] is None
+
 
 def test_get_log_file_with_no_found_regex(client):
     payload = {

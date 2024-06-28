@@ -68,8 +68,8 @@ def read_from_end(file_path,
         chunk = f.read(size)
         # Find the last newline character in the chunk
         first_newline = chunk.decode('utf-8', errors='ignore').find('\n')
-        # Can't find a newline, so return the whole chunk
-        if first_newline == -1:
+        # Can't find a newline or we're at the beginning, so return the whole chunk
+        if first_newline == -1 or position==0:
             return chunk, position
         else:
             # Adjust the position to read the next chunk correctly
