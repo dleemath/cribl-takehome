@@ -91,7 +91,7 @@ def read_from_end(file_path,
         while position >= 0:
             chunk, next_position = read_chunk(f, position, chunk_size)
             # skip the whole chunk if the regex pattern doesn't match
-            if position>0 and not regex_pattern.search(chunk.decode('utf-8',
+            if regex_pattern and position>0 and not regex_pattern.search(chunk.decode('utf-8',
             errors='ignore')):
                 #print("Skipping chunk {}.".format(position))
                 logging.debug("Skipping chunk {}.".format(position))
@@ -105,7 +105,7 @@ def read_from_end(file_path,
             if regex_pattern:
                 buffer_lines = [line for line in buffer_lines if
                                 regex_pattern.search(
-                                    line.decode('utf-8', errors='ignore'))]
+                                    line.decode('utf-8', errors='ignore'))]   
             lines = buffer_lines + lines
             read_time = time.time() - start_time
             # Check if we have read enough lines
@@ -124,7 +124,7 @@ def read_from_end(file_path,
             position = max(next_position - max_chunk_size, 0)
 
         # If the loop ends without enough lines, return all available lines
-        return lines, 0
+        return lines[::-1], 0
 
 
 def get_next_request(original_request: LogRequest, lines_retrieved: int,
